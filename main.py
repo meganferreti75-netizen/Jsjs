@@ -1,5 +1,4 @@
 import time
-import json
 import sqlite3
 import feedparser
 import random
@@ -11,6 +10,9 @@ from urllib.parse import quote
 
 conn = sqlite3.connect("libros.db", check_same_thread=False)
 cursor = conn.cursor()
+
+cursor.execute("PRAGMA journal_mode=WAL;")
+conn.commit()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS libros (
@@ -76,9 +78,9 @@ def fetch_arxiv(query, max_results=10):
 
         resultados.append({
             "tema": query,
-            "nombre": entry.title,
+            "nombre": getattr(entry, "title", ""),
             "link_descarga": pdf,
-            "tamaño": len(entry.title)
+            "tamaño": len(getattr(entry, "title", ""))
         })
 
     return resultados
