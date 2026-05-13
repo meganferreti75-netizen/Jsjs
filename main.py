@@ -3,6 +3,7 @@ import sqlite3
 import feedparser
 import random
 import requests
+import os
 from urllib.parse import quote
 from flask import Flask, jsonify
 import threading
@@ -40,7 +41,7 @@ CREATE TABLE IF NOT EXISTS estado (
 conn.commit()
 
 # =========================
-# FLASK API
+# FLASK APP
 # =========================
 
 app = Flask(__name__)
@@ -105,7 +106,6 @@ def es_valido(libro):
 
 def fetch_arxiv(query, max_results=10):
     query = quote(query)
-
     url = f"http://export.arxiv.org/api/query?search_query=all:{query}&start=0&max_results={max_results}"
     feed = feedparser.parse(url)
 
@@ -151,121 +151,4 @@ def fetch_semantic(query, max_results=10):
                 "tema": query,
                 "nombre": e.get("title", ""),
                 "link_descarga": (e.get("openAccessPdf") or {}).get("url"),
-                "tamaño": len(e.get("title", "")),
-                "fuente": "semantic"
-            }
-            for e in data
-        ]
-    except:
-        return []
-
-# =========================
-# OPENALEX
-# =========================
-
-def fetch_openalex(query, max_results=10):
-    url = "https://api.openalex.org/works"
-
-    params = {"search": query, "per-page": max_results}
-
-    try:
-        r = requests.get(url, params=params)
-        data = r.json().get("results", [])
-
-        return [
-            {
-                "tema": query,
-                "nombre": e.get("display_name", ""),
-                "link_descarga": None,
-                "tamaño": len(e.get("display_name", "")),
-                "fuente": "openalex"
-            }
-            for e in data
-        ]
-    except:
-        return []
-
-# =========================
-# VISTOS
-# =========================
-
-def cargar_vistos():
-    cursor.execute("SELECT link_descarga FROM libros")
-    rows = cursor.fetchall()
-    return set(r[0] for r in rows if r[0])
-
-vistos = cargar_vistos()
-
-# =========================
-# STORAGE
-# =========================
-
-def guardar_libro(libro):
-    if not es_valido(libro):
-        return False
-
-    if libro["link_descarga"] in vistos:
-        return False
-
-    cursor.execute("""
-        INSERT INTO libros (tema, nombre, link_descarga, tamaño, fuente, estado)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        libro["tema"],
-        libro["nombre"],
-        libro["link_descarga"],
-        libro["tamaño"],
-        libro["fuente"],
-        "validado"
-    ))
-
-    conn.commit()
-    vistos.add(libro["link_descarga"])
-    return True
-
-# =========================
-# PIPELINE
-# =========================
-
-def procesar():
-    dominio = random.choice(DOMINIOS)
-
-    cursor.execute("INSERT INTO estado (dominio) VALUES (?)", (dominio,))
-    conn.commit()
-
-    fuente = elegir_fuente(dominio)
-
-    print("\nDOMINIO:", dominio)
-    print("FUENTE:", fuente)
-
-    if fuente == "arxiv":
-        items = fetch_arxiv(dominio)
-    elif fuente == "semantic":
-        items = fetch_semantic(dominio)
-    else:
-        items = fetch_openalex(dominio)
-
-    for libro in items:
-        if guardar_libro(libro):
-            print("GUARDADO:", libro["nombre"])
-        else:
-            print("RECHAZADO:", libro["nombre"])
-
-# =========================
-# AGENTE + FLASK
-# =========================
-
-def agente():
-    print("SISTEMA MULTIFUENTE INICIADO")
-
-    while True:
-        try:
-            procesar()
-        except Exception as e:
-            print("ERROR:", str(e))
-
-        time.sleep(20)
-
-if __name__ == "__main__":
-    threading.Thread(target=agente).start()
-    app.run(host="0.0.0.0", port=8000)
+                "tamaño": len(e.get("title", ""
