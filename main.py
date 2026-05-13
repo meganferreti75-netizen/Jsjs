@@ -5,7 +5,7 @@ import random
 from urllib.parse import quote
 
 # =========================
-# BASE DE DATOS LOCAL (SQLite)
+# BASE DE DATOS LOCAL
 # =========================
 
 conn = sqlite3.connect("libros.db", check_same_thread=False)
@@ -24,6 +24,14 @@ CREATE TABLE IF NOT EXISTS libros (
 )
 """)
 
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS estado (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dominio TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+""")
+
 conn.commit()
 
 # =========================
@@ -37,23 +45,20 @@ DOMINIOS = [
 ]
 
 # =========================
-# VALIDACIÓN (REGLAS DE NEGOCIO)
+# VALIDACIÓN
 # =========================
 
 def es_valido(libro):
     if libro["tamaño"] == 0:
         return False
-
     if not libro["link_descarga"]:
         return False
-
     if libro["link_descarga"] == "no existente":
         return False
-
     return True
 
 # =========================
-# FUENTE: ARXIV
+# FUENTE ARXIV
 # =========================
 
 def fetch_arxiv(query, max_results=10):
@@ -86,11 +91,25 @@ def fetch_arxiv(query, max_results=10):
     return resultados
 
 # =========================
-# GUARDAR EN SQLITE
+# CONTROL DE DUPLICADOS
+# =========================
+
+def cargar_vistos():
+    cursor.execute("SELECT link_descarga FROM libros")
+    rows = cursor.fetchall()
+    return set([r[0] for r in rows if r[0]])
+
+vistos = cargar_vistos()
+
+# =========================
+# GUARDAR LIBRO
 # =========================
 
 def guardar_libro(libro):
     if not es_valido(libro):
+        return False
+
+    if libro["link_descarga"] in vistos:
         return False
 
     cursor.execute("""
@@ -104,6 +123,7 @@ def guardar_libro(libro):
     ))
 
     conn.commit()
+    vistos.add(libro["link_descarga"])
 
     print("GUARDADO:", libro["nombre"])
     return True
@@ -114,6 +134,9 @@ def guardar_libro(libro):
 
 def procesar():
     dominio = random.choice(DOMINIOS)
+
+    cursor.execute("INSERT INTO estado (dominio) VALUES (?)", (dominio,))
+    conn.commit()
 
     print("\nDOMINIO:", dominio)
 
@@ -126,11 +149,11 @@ def procesar():
             print("✖ rechazado:", libro["nombre"])
 
 # =========================
-# LOOP PRINCIPAL
+# LOOP
 # =========================
 
 def agente():
-    print("INICIO SISTEMA SQLITE")
+    print("INICIO SISTEMA SQLITE EVOLUCIONADO")
 
     while True:
         try:
@@ -141,7 +164,7 @@ def agente():
         time.sleep(20)
 
 # =========================
-# EJECUCIÓN
+# ENTRYPOINT
 # =========================
 
 if __name__ == "__main__":
