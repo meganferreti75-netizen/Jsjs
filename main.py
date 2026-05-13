@@ -9,7 +9,7 @@ from urllib.parse import quote
 # BASE DE DATOS LOCAL (SQLite)
 # =========================
 
-conn = sqlite3.connect("libros.db")
+conn = sqlite3.connect("libros.db", check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
