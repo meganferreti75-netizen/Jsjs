@@ -45,6 +45,10 @@ conn.commit()
 
 app = Flask(__name__)
 
+@app.route("/")
+def home():
+    return "AGENTE ACTIVO"
+
 @app.route("/libros")
 def libros():
     cursor.execute("SELECT * FROM libros")
@@ -96,7 +100,7 @@ def es_valido(libro):
     return True
 
 # =========================
-# FUENTE ARXIV
+# ARXIV
 # =========================
 
 def fetch_arxiv(query, max_results=10):
@@ -248,7 +252,7 @@ def procesar():
             print("RECHAZADO:", libro["nombre"])
 
 # =========================
-# AGENTE
+# AGENTE + FLASK
 # =========================
 
 def agente():
@@ -261,10 +265,6 @@ def agente():
             print("ERROR:", str(e))
 
         time.sleep(20)
-
-# =========================
-# EJECUCIÓN
-# =========================
 
 if __name__ == "__main__":
     threading.Thread(target=agente).start()
