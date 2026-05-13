@@ -1,3 +1,4 @@
+print("VERSION NUEVA CARGADA")
 import time
 import sqlite3
 import feedparser
