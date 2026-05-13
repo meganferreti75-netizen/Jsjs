@@ -266,4 +266,7 @@ def agente():
 # =========================
 
 if __name__ == "__main__":
-    agente()
+    try:
+        agente()
+    except Exception as e:
+        print("FATAL ERROR:", str(e))
