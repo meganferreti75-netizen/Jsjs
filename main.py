@@ -5,7 +5,7 @@ import random
 from urllib.parse import quote
 
 # =========================
-# BASE DE DATOS LOCAL
+# BASE DE DATOS
 # =========================
 
 conn = sqlite3.connect("libros.db", check_same_thread=False)
@@ -20,7 +20,9 @@ CREATE TABLE IF NOT EXISTS libros (
     tema TEXT,
     nombre TEXT,
     link_descarga TEXT,
-    tamaño INTEGER
+    tamaño INTEGER,
+    fuente TEXT,
+    estado TEXT
 )
 """)
 
@@ -43,6 +45,28 @@ DOMINIOS = [
     "analysis", "graph theory", "probability",
     "physics", "machine learning", "biology", "chemistry"
 ]
+
+# =========================
+# ROUTER DE FUENTES
+# =========================
+
+DOMINIO_MAP = {
+    "mathematics": ["arxiv", "semantic"],
+    "algebra": ["arxiv", "semantic"],
+    "geometry": ["arxiv", "openalex"],
+    "topology": ["arxiv", "openalex"],
+    "analysis": ["arxiv", "semantic"],
+    "graph theory": ["arxiv", "semantic"],
+    "probability": ["semantic", "openalex"],
+    "physics": ["arxiv", "semantic"],
+    "machine learning": ["semantic", "arxiv"],
+    "biology": ["semantic", "openalex"],
+    "chemistry": ["semantic", "openalex"]
+}
+
+def elegir_fuente(dominio):
+    opciones = DOMINIO_MAP.get(dominio, ["arxiv"])
+    return random.choice(opciones)
 
 # =========================
 # VALIDACIÓN
@@ -85,10 +109,76 @@ def fetch_arxiv(query, max_results=10):
             "tema": query,
             "nombre": getattr(entry, "title", ""),
             "link_descarga": pdf,
-            "tamaño": len(getattr(entry, "title", ""))
+            "tamaño": len(getattr(entry, "title", "")),
+            "fuente": "arxiv"
         })
 
     return resultados
+
+# =========================
+# FUENTE SEMANTIC SCHOLAR
+# =========================
+
+import requests
+
+def fetch_semantic(query, max_results=10):
+    url = "https://api.semanticscholar.org/graph/v1/paper/search"
+
+    params = {
+        "query": query,
+        "limit": max_results,
+        "fields": "title,url,openAccessPdf"
+    }
+
+    try:
+        r = requests.get(url, params=params)
+        data = r.json().get("data", [])
+
+        results = []
+
+        for e in data:
+            results.append({
+                "tema": query,
+                "nombre": e.get("title", ""),
+                "link_descarga": (e.get("openAccessPdf") or {}).get("url"),
+                "tamaño": len(e.get("title", "")),
+                "fuente": "semantic"
+            })
+
+        return results
+    except:
+        return []
+
+# =========================
+# FUENTE OPENALEX
+# =========================
+
+def fetch_openalex(query, max_results=10):
+    url = "https://api.openalex.org/works"
+
+    params = {
+        "search": query,
+        "per-page": max_results
+    }
+
+    try:
+        r = requests.get(url, params=params)
+        data = r.json().get("results", [])
+
+        results = []
+
+        for e in data:
+            results.append({
+                "tema": query,
+                "nombre": e.get("display_name", ""),
+                "link_descarga": None,
+                "tamaño": len(e.get("display_name", "")),
+                "fuente": "openalex"
+            })
+
+        return results
+    except:
+        return []
 
 # =========================
 # CONTROL DE DUPLICADOS
@@ -102,7 +192,7 @@ def cargar_vistos():
 vistos = cargar_vistos()
 
 # =========================
-# GUARDAR LIBRO
+# STORAGE
 # =========================
 
 def guardar_libro(libro):
@@ -113,19 +203,19 @@ def guardar_libro(libro):
         return False
 
     cursor.execute("""
-        INSERT INTO libros (tema, nombre, link_descarga, tamaño)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO libros (tema, nombre, link_descarga, tamaño, fuente, estado)
+        VALUES (?, ?, ?, ?, ?, ?)
     """, (
         libro["tema"],
         libro["nombre"],
         libro["link_descarga"],
-        libro["tamaño"]
+        libro["tamaño"],
+        libro["fuente"],
+        "validado"
     ))
 
     conn.commit()
     vistos.add(libro["link_descarga"])
-
-    print("GUARDADO:", libro["nombre"])
     return True
 
 # =========================
@@ -138,22 +228,30 @@ def procesar():
     cursor.execute("INSERT INTO estado (dominio) VALUES (?)", (dominio,))
     conn.commit()
 
+    fuente = elegir_fuente(dominio)
+
     print("\nDOMINIO:", dominio)
+    print("FUENTE:", fuente)
 
-    libros = fetch_arxiv(dominio, max_results=10)
+    if fuente == "arxiv":
+        items = fetch_arxiv(dominio)
+    elif fuente == "semantic":
+        items = fetch_semantic(dominio)
+    else:
+        items = fetch_openalex(dominio)
 
-    for libro in libros:
+    for libro in items:
         if guardar_libro(libro):
-            print("✔ válido:", libro["nombre"])
+            print("GUARDADO:", libro["nombre"], "|", fuente)
         else:
-            print("✖ rechazado:", libro["nombre"])
+            print("RECHAZADO:", libro["nombre"])
 
 # =========================
 # LOOP
 # =========================
 
 def agente():
-    print("INICIO SISTEMA SQLITE EVOLUCIONADO")
+    print("SISTEMA MULTIFUENTE INICIADO")
 
     while True:
         try:
