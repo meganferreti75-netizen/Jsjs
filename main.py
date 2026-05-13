@@ -2,7 +2,10 @@ import time
 import sqlite3
 import feedparser
 import random
+import requests
 from urllib.parse import quote
+from flask import Flask, jsonify
+import threading
 
 # =========================
 # BASE DE DATOS
@@ -37,6 +40,18 @@ CREATE TABLE IF NOT EXISTS estado (
 conn.commit()
 
 # =========================
+# FLASK API
+# =========================
+
+app = Flask(__name__)
+
+@app.route("/libros")
+def libros():
+    cursor.execute("SELECT * FROM libros")
+    rows = cursor.fetchall()
+    return jsonify(rows)
+
+# =========================
 # DOMINIOS
 # =========================
 
@@ -47,7 +62,7 @@ DOMINIOS = [
 ]
 
 # =========================
-# ROUTER DE FUENTES
+# ROUTER
 # =========================
 
 DOMINIO_MAP = {
@@ -65,8 +80,7 @@ DOMINIO_MAP = {
 }
 
 def elegir_fuente(dominio):
-    opciones = DOMINIO_MAP.get(dominio, ["arxiv"])
-    return random.choice(opciones)
+    return random.choice(DOMINIO_MAP.get(dominio, ["arxiv"]))
 
 # =========================
 # VALIDACIÓN
@@ -88,14 +102,10 @@ def es_valido(libro):
 def fetch_arxiv(query, max_results=10):
     query = quote(query)
 
-    url = (
-        "http://export.arxiv.org/api/query?"
-        f"search_query=all:{query}&start=0&max_results={max_results}"
-    )
-
+    url = f"http://export.arxiv.org/api/query?search_query=all:{query}&start=0&max_results={max_results}"
     feed = feedparser.parse(url)
 
-    resultados = []
+    results = []
 
     for entry in feed.entries:
         pdf = None
@@ -105,7 +115,7 @@ def fetch_arxiv(query, max_results=10):
                 if "pdf" in l.get("href", ""):
                     pdf = l.get("href")
 
-        resultados.append({
+        results.append({
             "tema": query,
             "nombre": getattr(entry, "title", ""),
             "link_descarga": pdf,
@@ -113,13 +123,11 @@ def fetch_arxiv(query, max_results=10):
             "fuente": "arxiv"
         })
 
-    return resultados
+    return results
 
 # =========================
-# FUENTE SEMANTIC SCHOLAR
+# SEMANTIC SCHOLAR
 # =========================
-
-import requests
 
 def fetch_semantic(query, max_results=10):
     url = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -134,60 +142,53 @@ def fetch_semantic(query, max_results=10):
         r = requests.get(url, params=params)
         data = r.json().get("data", [])
 
-        results = []
-
-        for e in data:
-            results.append({
+        return [
+            {
                 "tema": query,
                 "nombre": e.get("title", ""),
                 "link_descarga": (e.get("openAccessPdf") or {}).get("url"),
                 "tamaño": len(e.get("title", "")),
                 "fuente": "semantic"
-            })
-
-        return results
+            }
+            for e in data
+        ]
     except:
         return []
 
 # =========================
-# FUENTE OPENALEX
+# OPENALEX
 # =========================
 
 def fetch_openalex(query, max_results=10):
     url = "https://api.openalex.org/works"
 
-    params = {
-        "search": query,
-        "per-page": max_results
-    }
+    params = {"search": query, "per-page": max_results}
 
     try:
         r = requests.get(url, params=params)
         data = r.json().get("results", [])
 
-        results = []
-
-        for e in data:
-            results.append({
+        return [
+            {
                 "tema": query,
                 "nombre": e.get("display_name", ""),
                 "link_descarga": None,
                 "tamaño": len(e.get("display_name", "")),
                 "fuente": "openalex"
-            })
-
-        return results
+            }
+            for e in data
+        ]
     except:
         return []
 
 # =========================
-# CONTROL DE DUPLICADOS
+# VISTOS
 # =========================
 
 def cargar_vistos():
     cursor.execute("SELECT link_descarga FROM libros")
     rows = cursor.fetchall()
-    return set([r[0] for r in rows if r[0]])
+    return set(r[0] for r in rows if r[0])
 
 vistos = cargar_vistos()
 
@@ -242,12 +243,12 @@ def procesar():
 
     for libro in items:
         if guardar_libro(libro):
-            print("GUARDADO:", libro["nombre"], "|", fuente)
+            print("GUARDADO:", libro["nombre"])
         else:
             print("RECHAZADO:", libro["nombre"])
 
 # =========================
-# LOOP
+# AGENTE
 # =========================
 
 def agente():
@@ -262,11 +263,9 @@ def agente():
         time.sleep(20)
 
 # =========================
-# ENTRYPOINT
+# EJECUCIÓN
 # =========================
 
 if __name__ == "__main__":
-    try:
-        agente()
-    except Exception as e:
-        print("FATAL ERROR:", str(e))
+    threading.Thread(target=agente).start()
+    app.run(host="0.0.0.0", port=8000)
